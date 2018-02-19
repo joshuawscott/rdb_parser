@@ -1,6 +1,6 @@
 # RdbParser
 
-**TODO: Add description**
+Parses a redis backup (.rdb) file.
 
 ## Installation
 
@@ -17,5 +17,18 @@ end
 
 Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/rdb_parser](https://hexdocs.pm/rdb_parser).
+be found at [hexdocs.pm/rdb_parser](https://hexdocs.pm/rdb_parser)
 
+## Testing
+
+The tests use Redix to connect to a running Redis server, insert keys, and save the database.
+
+To work, you must start redis-server with the default options from the root of the repo:
+```
+redis-server
+```
+
+Then you can run the tests with:
+```
+mix test
+```
