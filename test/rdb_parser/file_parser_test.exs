@@ -10,14 +10,18 @@ defmodule RdbParser.FileParserTest do
   # Returns a callback that inserts entries into the agent's map.
   def collector_callback() do
     {:ok, agent} = Agent.start_link(fn -> %{} end)
+
     callback = fn
       :entry, {key, value, []} ->
         Agent.update(agent, fn entries -> Map.put(entries, key, {value, []}) end)
+
       :entry, {key, value, metadata} ->
         Agent.update(agent, fn entries -> Map.put(entries, key, {value, metadata}) end)
+
       _type, _data ->
         :ok
     end
+
     {agent, callback}
   end
 
@@ -33,6 +37,7 @@ defmodule RdbParser.FileParserTest do
     {:ok, redis} = Redix.start_link()
     Redix.command(redis, ["flushall"])
     save(redis)
+
     %{
       redis: redis
     }
@@ -74,9 +79,9 @@ defmodule RdbParser.FileParserTest do
     FileParser.parse_file("dump.rdb", callback)
 
     %{"myset" => {set, []}} = get_entries(agent)
-    assert MapSet.member? set, "one"
-    assert MapSet.member? set, "two"
-    assert MapSet.member? set, "three"
+    assert MapSet.member?(set, "one")
+    assert MapSet.member?(set, "two")
+    assert MapSet.member?(set, "three")
   end
 
   test "parsing a compressed string", %{redis: redis} do
@@ -88,8 +93,35 @@ defmodule RdbParser.FileParserTest do
     {agent, callback} = collector_callback()
     FileParser.parse_file("dump.rdb", callback)
     entries = get_entries(agent)
-    assert Map.has_key? entries, key
+    assert Map.has_key?(entries, key)
     assert {value, []} == entries[key]
+  end
 
+  test "parsing a mix of keys", %{redis: redis} do
+    # earlier than expiration
+    beginning = get_milliseconds() + 60_000
+
+    Redix.command(redis, ["set", "mykey", "myval"])
+    Redix.command(redis, ["set", "myexpkey", "myexpval", "ex", "60"])
+    Redix.command(redis, ["sadd", "myset", "one"])
+    Redix.command(redis, ["sadd", "myset", "two"])
+    Redix.command(redis, ["save"])
+    save(redis)
+
+    # later than expiration
+    ending = get_milliseconds() + 60_000
+
+    {agent, callback} = collector_callback()
+    FileParser.parse_file("dump.rdb", callback)
+    %{
+      "mykey" => {"myval", []},
+      "myexpkey" => {"myexpval", [expire_ms: expire_ms]},
+      "myset" => {myset, []}
+    } = get_entries(agent)
+
+    assert expire_ms >= beginning
+    assert expire_ms <= ending
+    assert MapSet.member? myset, "one"
+    assert MapSet.member? myset, "two"
   end
 end
