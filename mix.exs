@@ -21,6 +21,7 @@ defmodule RdbParser.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:lzf, "~> 0.1"},
       {:redix, ">= 0.0.0", only: [:test]}
     ]
   end

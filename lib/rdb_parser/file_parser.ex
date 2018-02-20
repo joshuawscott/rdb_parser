@@ -29,8 +29,6 @@ defmodule RdbParser.FileParser do
   """
   @spec parse_file(String.t(), callback_signature()) :: :ok | {:error, binary()}
   def parse_file(file, callback) do
-    create_port()
-
     unparsed =
       file
       |> File.stream!([], 65536)
@@ -41,8 +39,6 @@ defmodule RdbParser.FileParser do
         end
       end)
       |> Stream.run()
-
-    close_port()
 
     case unparsed do
       :ok -> :ok
@@ -91,7 +87,15 @@ defmodule RdbParser.FileParser do
 
   @doc """
   parse looks for opcodes to determine what should be parsed out.
+
+  This returns `:ok` if the EOF block is reached, otherwise it will return
+  `{:incomplete, unparsable_binary}`. This is useful for being able to stream
+  a file, since you can then just get the next chunk and append it to the
+  unparsable binary and re-send, or if you have reached the end of the input,
+  it is possible to still parse out the data that did exist (for example, if
+  the file was corrupted)
   """
+  @spec parse(binary, callback_signature()) :: :ok | {:incomplete, binary()}
   def parse(<<@rdb_file_header::binary, version::binary-size(4), rest::binary>>, func) do
     func.(:version, String.to_integer(version))
     parse(rest, func)
@@ -244,7 +248,8 @@ defmodule RdbParser.FileParser do
 
     case rest do
       <<raw_lzf::binary-size(compressed_len), rest::binary>> ->
-        {decompress(raw_lzf), rest}
+        formatted_lzf = <<"ZV", 1, compressed_len::size(16), original_len::size(16), raw_lzf::binary>>
+        {Lzf.decompress(formatted_lzf), rest}
 
       _ ->
         :incomplete
@@ -273,38 +278,4 @@ defmodule RdbParser.FileParser do
     end
   end
 
-  defp lzf_port do
-    :ets.lookup_element(:rdb_state, :lzf, 2)
-  end
-
-  defp decompress(binary) do
-    port = lzf_port()
-    send(port, {self(), {:command, binary}})
-
-    receive do
-      {^port, {:data, data}} -> data
-      {^port, :closed} -> raise "lzf port closed"
-      {:EXIT, ^port, reason} -> raise "lzf crashed: #{inspect(reason)}"
-      other -> raise "Received #{inspect(other)}"
-    after
-      1_000 -> raise "Nothing after 1s"
-    end
-  end
-
-  defp create_port do
-    :rdb_state = :ets.new(:rdb_state, [:named_table])
-    lzf_port = Port.open({:spawn, "ruby lzf.rb"}, [:binary, {:packet, 4}])
-    true = :ets.insert_new(:rdb_state, {:lzf, lzf_port})
-    lzf_port
-  end
-
-  defp close_port do
-    port = lzf_port()
-    send(port, {self(), :close})
-
-    receive do
-      {^port, :closed} -> :ok
-      err -> raise "Close failed: #{inspect(err)}"
-    end
-  end
 end

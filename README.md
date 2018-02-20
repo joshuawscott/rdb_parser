@@ -2,6 +2,12 @@
 
 Parses a redis backup (.rdb) file.
 
+## Current features:
+
+Parses strings, sets, and expirations.
+
+Other formats will be supported eventaully (or make a PR)
+
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
