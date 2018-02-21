@@ -4,7 +4,7 @@ defmodule RdbParser.FileParserTest do
   alias RdbParser.FileParser
 
   def save(redis) do
-    Redix.command(redis, ["save"])
+    Redix.command!(redis, ["save"])
   end
 
   # Returns a callback that inserts entries into the agent's map.
@@ -123,5 +123,23 @@ defmodule RdbParser.FileParserTest do
     assert expire_ms <= ending
     assert MapSet.member? myset, "one"
     assert MapSet.member? myset, "two"
+  end
+
+  test "parsing many keys", %{redis: redis} do
+    Enum.each(1..10_000, fn n ->
+      {:ok, "OK"} = Redix.command(redis, ["SET", "mykey#{n}", "myval#{n}"])
+    end)
+    {:ok, _} = Redix.command(redis, ["SAVE"])
+    {agent, callback} = collector_callback()
+    FileParser.parse_file("dump.rdb", callback)
+    entries = get_entries(agent)
+    assert 10_000 == map_size(entries)
+    Enum.each(1..10_000, fn n ->
+      key = "mykey#{n}"
+      expected = "myval#{n}"
+
+      %{^key => {val, []}} = entries
+      assert expected == val
+    end)
   end
 end

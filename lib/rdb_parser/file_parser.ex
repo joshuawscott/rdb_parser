@@ -4,6 +4,8 @@ defmodule RdbParser.FileParser do
   if a filename and function is passed to the `parse_file`
   """
 
+  require Logger
+
   @type field_type :: :entry | :aux | :version | :resizedb | :selectdb | :eof
 
   # Some
@@ -28,11 +30,13 @@ defmodule RdbParser.FileParser do
   This streams the passed file, so it is possible to parse files of arbitrary size.
   """
   @spec parse_file(String.t(), callback_signature()) :: :ok | {:error, binary()}
-  def parse_file(file, callback) do
+  def parse_file(file, callback) when is_function(callback, 2) do
     unparsed =
       file
       |> File.stream!([], 65536)
       |> Stream.scan("", fn chunk, accum ->
+        Logger.debug("chunk: #{:erlang.byte_size(chunk)}")
+
         case parse(accum <> chunk, callback) do
           :ok -> true
           {:incomplete, rest} -> rest
@@ -101,20 +105,21 @@ defmodule RdbParser.FileParser do
     parse(rest, func)
   end
 
-  def parse(<<@rdb_opcode_aux, rest::binary>>, func) do
+  def parse(<<@rdb_opcode_aux, rest::binary>> = orig, func) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
       func.(:aux, {key, value})
       parse(rest, func)
     else
-      :incomplete -> {:incomplete, rest}
+      :incomplete -> {:incomplete, orig}
     end
   end
 
-  def parse(<<@rdb_opcode_resizedb, rest::binary>>, func) do
+  def parse(<<@rdb_opcode_resizedb, rest::binary>> = orig, func) do
     case parse_length(rest) do
       :incomplete ->
-        {:incomplete, rest}
+        Logger.debug("incomplete in resizedb")
+        {:incomplete, orig}
 
       {len, rest} ->
         {expirelen, rest} = parse_length(rest)
@@ -126,7 +131,7 @@ defmodule RdbParser.FileParser do
 
   def parse(
         <<@rdb_opcode_expiretime, expiration_time::little-unsigned-integer-size(32),
-          @rdb_type_string, rest::binary>>,
+          @rdb_type_string, rest::binary>> = orig,
         func
       ) do
     with {key, rest} <- parse_string(rest),
@@ -134,13 +139,15 @@ defmodule RdbParser.FileParser do
       func.(:expire, {key, value, expires: expiration_time})
       parse(rest, func)
     else
-      :incomplete -> {:incomplete, rest}
+      :incomplete ->
+        Logger.debug("incomplete in expire")
+        {:incomplete, orig}
     end
   end
 
   def parse(
         <<@rdb_opcode_expiretime_ms, expiration_time::little-unsigned-integer-size(64),
-          @rdb_type_string, rest::binary>>,
+          @rdb_type_string, rest::binary>> = orig,
         func
       ) do
     with {key, rest} <- parse_string(rest),
@@ -148,7 +155,9 @@ defmodule RdbParser.FileParser do
       func.(:entry, {key, value, expire_ms: expiration_time})
       parse(rest, func)
     else
-      :incomplete -> {:incomplete, rest}
+      :incomplete ->
+        Logger.debug("incomplete in expire_ms")
+        {:incomplete, orig}
     end
   end
 
@@ -162,23 +171,27 @@ defmodule RdbParser.FileParser do
     :ok
   end
 
-  def parse(<<@rdb_type_string, rest::binary>>, func) do
+  def parse(<<@rdb_type_string, rest::binary>> = orig, func) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
       func.(:entry, {key, value, []})
       parse(rest, func)
     else
-      :incomplete -> {:incomplete, rest}
+      :incomplete ->
+        Logger.debug("incomplete in string")
+        {:incomplete, orig}
     end
   end
 
-  def parse(<<@rdb_type_set, rest::binary>>, func) do
+  def parse(<<@rdb_type_set, rest::binary>> = orig, func) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_set(rest) do
       func.(:entry, {key, value, []})
       parse(rest, func)
     else
-      :incomplete -> {:incomplete, rest}
+      :incomplete ->
+        Logger.debug("incomplete in set")
+        {:incomplete, orig}
     end
   end
 
@@ -200,7 +213,7 @@ defmodule RdbParser.FileParser do
       ),
       do: {len, rest}
 
-  def parse_length(rest), do: :incomplete
+  def parse_length(_rest), do: :incomplete
 
   @doc """
   parse_string looks at the first byte to determine how the length is encoded, then takes the next
@@ -243,20 +256,20 @@ defmodule RdbParser.FileParser do
 
   # LZF compressed chunk
   def parse_string(<<195::size(8), data::binary>>) do
-    {compressed_len, rest} = parse_length(data)
-    {original_len, rest} = parse_length(rest)
+    lengths =
+      with {compressed_len, rest} <- parse_length(data),
+           {original_len, rest} <- parse_length(rest),
+           <<raw_lzf::binary-size(compressed_len), rest::binary>> <- rest do
+        formatted_lzf =
+          <<"ZV", 1, compressed_len::size(16), original_len::size(16), raw_lzf::binary>>
 
-    case rest do
-      <<raw_lzf::binary-size(compressed_len), rest::binary>> ->
-        formatted_lzf = <<"ZV", 1, compressed_len::size(16), original_len::size(16), raw_lzf::binary>>
         {Lzf.decompress(formatted_lzf), rest}
-
-      _ ->
-        :incomplete
-    end
+      else
+        _ -> :incomplete
+      end
   end
 
-  def parse_string(binary) do
+  def parse_string(_binary) do
     :incomplete
   end
 
@@ -277,5 +290,4 @@ defmodule RdbParser.FileParser do
       {str, rest} -> parse_set_elements(rest, entries_left - 1, MapSet.put(set, str))
     end
   end
-
 end
