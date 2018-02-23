@@ -1,5 +1,8 @@
-defmodule RdbParser.FileParser do
+defmodule RdbParser.FileParserStream do
   @moduledoc """
+  Emits a stream that can be used to work through the entries without having to read the entire
+  file into memory (which could be impossible).
+
   This does the actual work of parsing a .rdb file. This module can be used directly
   if a filename and function is passed to the `parse_file`
   """
@@ -20,7 +23,8 @@ defmodule RdbParser.FileParser do
           | (:eof, checksum :: binary() -> any())
 
   @doc """
-  Pass a file name and a callback function that will be called with an atom
+  Pass a file name, and it returns a series of 2-tuples: `{type, data}`
+  where and a callback function that will be called with an atom
   representing the type, and a second argument that represents the data from that
   entry. For normal data (keys) this is a 3-tuple. The 3-tuple
   is {key::binary, value::term, metadata::Keyword.t}
@@ -51,10 +55,10 @@ defmodule RdbParser.FileParser do
   def parse_file(filename) do
     filename
     |> File.stream!([], 65536)
-    |> Stream.scan("", fn chunk, {leftover, entries} ->
-      case parse(leftover <> chunk, []) do
+    |> Stream.scan({"", []}, fn chunk, {leftover, entries} ->
+      case parse(leftover <> chunk, entries) do
         {:incomplete, leftover, entries} -> {leftover, entries}
-        {:ok, entries} -> {"", entries}
+        {:eof, _checksum, entries} -> {"", entries}
       end
     end)
     |> Stream.flat_map(fn {leftover, entries} -> entries end)
@@ -109,82 +113,74 @@ defmodule RdbParser.FileParser do
   it is possible to still parse out the data that did exist (for example, if
   the file was corrupted)
   """
-  @spec parse(binary, callback_signature()) :: :ok | {:incomplete, binary()}
-  def parse(<<@rdb_file_header, version::binary-size(4), rest::binary>>, func) do
-    func.(:version, String.to_integer(version))
-    parse(rest, func)
+  @spec parse(binary) :: {:ok, list()} | {:incomplete, binary(), list()} | {:eof, list()}
+  def parse(<<@rdb_file_header, version::binary-size(4), rest::binary>>, entries) do
+    {:ok, rest, [{:version, String.to_integer(version)} | entries]}
   end
 
-  def parse(<<@rdb_opcode_aux, rest::binary>> = orig, func) do
+  def parse(<<@rdb_opcode_aux, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-      func.(:aux, {key, value})
-      parse(rest, func)
+       {:ok, rest, [{:aux, {key, value}}|entries]}
     else
-      :incomplete -> {:incomplete, orig}
+      :incomplete -> {:incomplete, orig, entries}
     end
   end
 
-  def parse(<<@rdb_opcode_resizedb, rest::binary>> = orig, func) do
+  def parse(<<@rdb_opcode_resizedb, rest::binary>> = orig, entries) do
     case parse_length(rest) do
       :incomplete ->
         Logger.debug("incomplete in resizedb")
-        {:incomplete, orig}
+        {:incomplete, orig, entries}
 
       {len, rest} ->
         {expirelen, rest} = parse_length(rest)
-        func.(:resizedb, {:main, len, nil})
-        func.(:resizedb, {:expire, expirelen})
-        parse(rest, func)
+        {:ok, rest, [{:resizedb, {len, expirelen}}|entries]}
     end
   end
 
   def parse(
         <<@rdb_opcode_expiretime, expiration_time::little-unsigned-integer-size(32),
           @rdb_type_string, rest::binary>> = orig,
-        func
+        entries
       ) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-      func.(:expire, {key, value, expires: expiration_time})
-      parse(rest, func)
+           {:ok, rest, [{:expire, {key, value, expires: expiration_time}}|entries]}
     else
       :incomplete ->
         Logger.debug("incomplete in expire")
-        {:incomplete, orig}
+        {:incomplete, orig, entries}
     end
   end
 
   def parse(
         <<@rdb_opcode_expiretime_ms, expiration_time::little-unsigned-integer-size(64),
           @rdb_type_string, rest::binary>> = orig,
-        func
+        entries
       ) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-      func.(:entry, {key, value, expire_ms: expiration_time})
-      parse(rest, func)
+           {:ok, rest, [{:entry, {key, value, expire_ms: expiration_time}}|entries]}
     else
       :incomplete ->
         Logger.debug("incomplete in expire_ms")
-        {:incomplete, orig}
+        {:incomplete, orig, entries}
     end
   end
 
-  def parse(<<@rdb_opcode_selectdb, database_id::size(8), rest::binary>>, func) do
-    func.(:database_id, database_id)
-    parse(rest, func)
+  def parse(<<@rdb_opcode_selectdb, database_id::size(8), rest::binary>>, entries) do
+    {:ok, rest, [{:database_id, database_id}|entries]}
   end
 
-  def parse(<<@rdb_opcode_eof, checksum::binary-size(8)>>, func) do
-    func.(:eof, checksum)
-    :ok
+  def parse(<<@rdb_opcode_eof, checksum::binary-size(8)>>, entries) do
+    {:eof, checksum, entries}
   end
 
-  def parse(<<@rdb_type_string, rest::binary>> = orig, func) do
+  def parse(<<@rdb_type_string, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-      func.(:entry, {key, value, []})
+      {:entry, {key, value, []}}
       parse(rest, func)
     else
       :incomplete ->
