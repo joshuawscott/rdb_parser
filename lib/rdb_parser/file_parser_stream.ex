@@ -13,55 +13,22 @@ defmodule RdbParser.FileParserStream do
 
   # Some
   @type redis_value :: binary() | MapSet.t() | list() | map()
+  @type rdb_entry ::
+          {:version, integer()}
+          | {:resizedb, {:main | :expire, integer()}}
+          | {:selectdb, db_number :: integer()}
+          | {:aux, {key :: binary(), value :: redis_value}}
+          | {:entry, {key :: binary(), value :: redis_value, Keyword.t()}}
+          | {:eof, checksum :: binary()}
 
-  @type callback_signature ::
-          (:version, integer() -> any())
-          | (:resizedb, {:main | :expire, integer()} -> any())
-          | (:selectdb, db_number :: integer() -> any())
-          | (:aux, {key :: binary(), value :: redis_value} -> any())
-          | (:entry, {key :: binary(), value :: redis_value, Keyword.t()} -> any())
-          | (:eof, checksum :: binary() -> any())
-
-  @doc """
-  Pass a file name, and it returns a series of 2-tuples: `{type, data}`
-  where and a callback function that will be called with an atom
-  representing the type, and a second argument that represents the data from that
-  entry. For normal data (keys) this is a 3-tuple. The 3-tuple
-  is {key::binary, value::term, metadata::Keyword.t}
-
-  See the `callback_signature` type to understand what values you may need to accept.
-
-  This streams the passed file, so it is possible to parse files of arbitrary size.
-  """
-  @spec parse_file(String.t(), callback_signature()) :: :ok | {:error, binary()}
-  def parse_file(file, callback) when is_function(callback, 2) do
-    unparsed =
-      file
-      |> File.stream!([], 65536)
-      |> Stream.scan("", fn chunk, accum ->
-        case parse(accum <> chunk, callback) do
-          :ok -> true
-          {:incomplete, rest} -> rest
-        end
-      end)
-      |> Stream.run()
-
-    case unparsed do
-      :ok -> :ok
-      extra -> {:error, extra}
-    end
-  end
-
-  def parse_file(filename) do
+  def stream_entries(filename, opts \\ []) do
+    chunk_size = Keyword.get(opts, :chunk_size, 65536)
     filename
-    |> File.stream!([], 65536)
-    |> Stream.scan({"", []}, fn chunk, {leftover, entries} ->
-      case parse(leftover <> chunk, entries) do
-        {:incomplete, leftover, entries} -> {leftover, entries}
-        {:eof, _checksum, entries} -> {"", entries}
-      end
+    |> File.stream!([], chunk_size)
+    |> Stream.scan({[], ""}, fn chunk, {_entries, leftover} ->
+      parse(leftover <> chunk)
     end)
-    |> Stream.flat_map(fn {leftover, entries} -> entries end)
+    |> Stream.flat_map(fn {entries, _leftover} -> entries end)
   end
 
   ##
@@ -103,27 +70,35 @@ defmodule RdbParser.FileParserStream do
 
   @rdb_file_header "REDIS"
 
-  @doc """
-  parse/2 works like parse/1 but calls the function with the result.
+  @doc false
+  @spec parse(binary) :: {[rdb_entry], binary()}
+  def parse(bin), do: parse(bin, [])
 
-  This returns `:ok` if the EOF block is reached, otherwise it will return
-  `{:incomplete, unparsable_binary}`. This is useful for being able to stream
-  a file, since you can then just get the next chunk and append it to the
-  unparsable binary and re-send, or if you have reached the end of the input,
-  it is possible to still parse out the data that did exist (for example, if
-  the file was corrupted)
-  """
-  @spec parse(binary) :: {:ok, list()} | {:incomplete, binary(), list()} | {:eof, list()}
+  @doc false
+  @spec parse(binary, [rdb_entry]) :: {[rdb_entry], binary()}
+  # Parsed to end of chunk
+  def parse("", entries) do
+    {:lists.reverse(entries), ""}
+  end
+
+  # Parsed to end of file
+  def parse(<<@rdb_opcode_eof, checksum::binary-size(8)>>, entries) do
+    entry = {:eof, checksum}
+    {:lists.reverse([entry | entries]), ""}
+  end
+
   def parse(<<@rdb_file_header, version::binary-size(4), rest::binary>>, entries) do
-    {:ok, rest, [{:version, String.to_integer(version)} | entries]}
+    entry = {:version, String.to_integer(version)}
+    parse(rest, [entry | entries])
   end
 
   def parse(<<@rdb_opcode_aux, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-       {:ok, rest, [{:aux, {key, value}}|entries]}
+      entry = {:aux, {key, value}}
+      parse(rest, [entry | entries])
     else
-      :incomplete -> {:incomplete, orig, entries}
+      :incomplete -> {:lists.reverse(entries), orig}
     end
   end
 
@@ -131,11 +106,12 @@ defmodule RdbParser.FileParserStream do
     case parse_length(rest) do
       :incomplete ->
         Logger.debug("incomplete in resizedb")
-        {:incomplete, orig, entries}
+        {:lists.reverse(entries), orig}
 
       {len, rest} ->
         {expirelen, rest} = parse_length(rest)
-        {:ok, rest, [{:resizedb, {len, expirelen}}|entries]}
+        entry = {:resizedb, {len, expirelen}}
+        parse(rest, [entry | entries])
     end
   end
 
@@ -146,11 +122,11 @@ defmodule RdbParser.FileParserStream do
       ) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-           {:ok, rest, [{:expire, {key, value, expires: expiration_time}}|entries]}
+      parse(rest, [{:expire, {key, value, expires: expiration_time}} | entries])
     else
       :incomplete ->
         Logger.debug("incomplete in expire")
-        {:incomplete, orig, entries}
+        {:lists.reverse(entries), orig}
     end
   end
 
@@ -161,49 +137,47 @@ defmodule RdbParser.FileParserStream do
       ) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-           {:ok, rest, [{:entry, {key, value, expire_ms: expiration_time}}|entries]}
+      entry = {:entry, {key, value, expire_ms: expiration_time}}
+      parse(rest, [entry | entries])
     else
       :incomplete ->
         Logger.debug("incomplete in expire_ms")
-        {:incomplete, orig, entries}
+        {:lists.reverse(entries), orig}
     end
   end
 
   def parse(<<@rdb_opcode_selectdb, database_id::size(8), rest::binary>>, entries) do
-    {:ok, rest, [{:database_id, database_id}|entries]}
-  end
-
-  def parse(<<@rdb_opcode_eof, checksum::binary-size(8)>>, entries) do
-    {:eof, checksum, entries}
+    parse(rest, [{:database_id, database_id} | entries])
   end
 
   def parse(<<@rdb_type_string, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
-      {:entry, {key, value, []}}
-      parse(rest, func)
+      entry = {:entry, {key, value, []}}
+      parse(rest, [entry | entries])
     else
       :incomplete ->
         Logger.debug("incomplete in string")
-        {:incomplete, orig}
+        {:lists.reverse(entries), orig}
     end
   end
 
-  def parse(<<@rdb_type_set, rest::binary>> = orig, func) do
+  def parse(<<@rdb_type_set, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_set(rest) do
-      func.(:entry, {key, value, []})
-      parse(rest, func)
+      entry = {:entry, {key, value, []}}
+      parse(rest, [entry|entries])
     else
       :incomplete ->
         Logger.debug("incomplete in set")
-        {:incomplete, orig}
+        {:lists.reverse(entries), orig}
     end
   end
 
-  # Fallback case
-  def parse(rest, _func) do
-    {:incomplete, rest}
+  # Fallback case - this should mean that we don't have the right length in
+  # the current chunk.
+  def parse(orig, entries) do
+    {:lists.reverse(entries), orig}
   end
 
   def parse_length(<<0::size(2), len::size(6), rest::binary>>), do: {len, rest}

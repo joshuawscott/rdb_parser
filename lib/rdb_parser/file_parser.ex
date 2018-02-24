@@ -48,18 +48,6 @@ defmodule RdbParser.FileParser do
     end
   end
 
-  def parse_file(filename) do
-    filename
-    |> File.stream!([], 65536)
-    |> Stream.scan("", fn chunk, {leftover, entries} ->
-      case parse(leftover <> chunk, []) do
-        {:incomplete, leftover, entries} -> {leftover, entries}
-        {:ok, entries} -> {"", entries}
-      end
-    end)
-    |> Stream.flat_map(fn {leftover, entries} -> entries end)
-  end
-
   ##
   # Taken from rdb.h
   # https://github.com/antirez/redis/blob/unstable/src/rdb.h
