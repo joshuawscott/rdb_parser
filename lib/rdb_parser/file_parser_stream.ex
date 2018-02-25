@@ -28,7 +28,7 @@ defmodule RdbParser.FileParserStream do
     |> Stream.scan({[], ""}, fn chunk, {_entries, leftover} ->
       parse(leftover <> chunk)
     end)
-    #|> Stream.flat_map(fn {entries, _leftover} -> entries end)
+    |> Stream.flat_map(fn {entries, _leftover} -> entries end)
   end
 
   ##
