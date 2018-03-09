@@ -23,6 +23,7 @@ defmodule RdbParser.FileParserStream do
 
   def stream_entries(filename, opts \\ []) do
     chunk_size = Keyword.get(opts, :chunk_size, 65536)
+
     filename
     |> File.stream!([], chunk_size)
     |> Stream.scan({[], ""}, fn chunk, {_entries, leftover} ->
@@ -87,11 +88,13 @@ defmodule RdbParser.FileParserStream do
     {:lists.reverse([entry | entries]), ""}
   end
 
+  # Version entry
   def parse(<<@rdb_file_header, version::binary-size(4), rest::binary>>, entries) do
     entry = {:version, String.to_integer(version)}
     parse(rest, [entry | entries])
   end
 
+  # Metadata "Aux" fields
   def parse(<<@rdb_opcode_aux, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
@@ -102,6 +105,8 @@ defmodule RdbParser.FileParserStream do
     end
   end
 
+  # This is a directive that redis uses to know how many hashtable slots it
+  # needs to allocate. It gives the number of entries.
   def parse(<<@rdb_opcode_resizedb, rest::binary>> = orig, entries) do
     case parse_length(rest) do
       :incomplete ->
@@ -115,6 +120,12 @@ defmodule RdbParser.FileParserStream do
     end
   end
 
+  # This tells which database is about to be read
+  def parse(<<@rdb_opcode_selectdb, database_id::size(8), rest::binary>>, entries) do
+    parse(rest, [{:database_id, database_id} | entries])
+  end
+
+  # This is an key/value pair with an expiration
   def parse(
         <<@rdb_opcode_expiretime, expiration_time::little-unsigned-integer-size(32),
           @rdb_type_string, rest::binary>> = orig,
@@ -130,6 +141,7 @@ defmodule RdbParser.FileParserStream do
     end
   end
 
+  # This is an key/value pair with an expiration in milliseconds
   def parse(
         <<@rdb_opcode_expiretime_ms, expiration_time::little-unsigned-integer-size(64),
           @rdb_type_string, rest::binary>> = orig,
@@ -146,10 +158,7 @@ defmodule RdbParser.FileParserStream do
     end
   end
 
-  def parse(<<@rdb_opcode_selectdb, database_id::size(8), rest::binary>>, entries) do
-    parse(rest, [{:database_id, database_id} | entries])
-  end
-
+  # This is a STRING type key/value pair without an expiration
   def parse(<<@rdb_type_string, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_string(rest) do
@@ -162,11 +171,12 @@ defmodule RdbParser.FileParserStream do
     end
   end
 
+  # This is a SET type key/value pair
   def parse(<<@rdb_type_set, rest::binary>> = orig, entries) do
     with {key, rest} <- parse_string(rest),
          {value, rest} <- parse_set(rest) do
       entry = {:entry, {key, value, []}}
-      parse(rest, [entry|entries])
+      parse(rest, [entry | entries])
     else
       :incomplete ->
         Logger.debug("incomplete in set")
