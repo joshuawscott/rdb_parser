@@ -27,16 +27,17 @@ be found at [hexdocs.pm/rdb_parser](https://hexdocs.pm/rdb_parser)
 
 ## Usage
 
-# Store the contents of a dump file in a map called `database`:
+Store the contents of a dump file in a map called `database`:
 
 ```elixir
 database =
   "dump.rdb"
-  |> RdbParser.stream_file()
-  |> Enum.reduce(fn
+  |> RdbParser.stream_entries()
+  |> Enum.reduce(%{}, fn
     {:entry, {key, value, metadata}}, accum ->
-      Map.put(accum, key, {value, metadata}}
-    _ ->
+      Map.put(accum, key, {value, metadata})
+
+    _, accum ->
       # Ignore the non-data entries
       accum
   end)

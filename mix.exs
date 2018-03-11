@@ -24,7 +24,8 @@ defmodule RdbParser.MixProject do
       {:lzf, "~> 0.1"},
       {:redix, ">= 0.0.0", only: [:test, :dev]},
       {:dialyxir, "~> 0.5", only: [:dev]},
-      {:credo, "~> 0.8", only: [:dev]}
+      {:credo, "~> 0.8", only: [:dev]},
+      {:ex_doc, ">= 0.0.0", only: [:dev]}
     ]
   end
 end
