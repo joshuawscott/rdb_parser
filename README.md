@@ -25,6 +25,23 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at [hexdocs.pm/rdb_parser](https://hexdocs.pm/rdb_parser)
 
+## Usage
+
+# Store the contents of a dump file in a map called `database`:
+
+```elixir
+database =
+  "dump.rdb"
+  |> RdbParser.stream_file()
+  |> Enum.reduce(fn
+    {:entry, {key, value, metadata}}, accum ->
+      Map.put(accum, key, {value, metadata}}
+    _ ->
+      # Ignore the non-data entries
+      accum
+  end)
+```
+
 ## Testing
 
 The tests use Redix to connect to a running Redis server, insert keys, and save the database.
