@@ -5,3 +5,5 @@ elixir:
   - '1.6.3'
 services:
   redis-server
+after_script:
+  ls -al .
