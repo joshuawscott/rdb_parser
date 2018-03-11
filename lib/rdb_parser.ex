@@ -33,6 +33,46 @@ defmodule RdbParser do
   @type stream_option :: :chunk_size
   @type stream_options :: [stream_option]
 
+  ##
+  # Taken from rdb.h
+  # https://github.com/antirez/redis/blob/unstable/src/rdb.h
+  ##
+
+  # Opcodes
+  # 0xFA
+  @rdb_opcode_aux 250
+  # 0xFB
+  @rdb_opcode_resizedb 251
+  # 0xFC
+  @rdb_opcode_expiretime_ms 252
+  # 0xFD
+  @rdb_opcode_expiretime 253
+  # 0xFE
+  @rdb_opcode_selectdb 254
+  # 0xFF
+  @rdb_opcode_eof 255
+
+  # Basic Types
+  @rdb_type_string 0
+  @rdb_type_list 1
+  @rdb_type_set 2
+  # @rdb_type_zset 3
+  # @rdb_type_hash 4
+  # @rdb_type_zset_2 5 # zset version 2 with doubles stored in binary
+  # @rdb_type_module 6
+
+  # Encoded Types
+  # @rdb_type_hash_zipmap 9
+  # @rdb_type_list_ziplist 10
+  # @rdb_type_set_intset 11
+  # @rdb_type_zset_ziplist 12
+  # @rdb_type_hash_ziplist 13
+  @rdb_type_list_quicklist 14
+  # @rdb_type_stream_listpacks 15
+
+  @rdb_file_header "REDIS"
+
+
   @doc """
   Pass a filename and `opts`.
   The filename is read in chunks and parsed to avoid reading the entire backup
@@ -72,45 +112,6 @@ defmodule RdbParser do
     end)
     |> Stream.flat_map(fn {entries, _leftover} -> entries end)
   end
-
-  ##
-  # Taken from rdb.h
-  # https://github.com/antirez/redis/blob/unstable/src/rdb.h
-  ##
-
-  # Opcodes
-  # 0xFA
-  @rdb_opcode_aux 250
-  # 0xFB
-  @rdb_opcode_resizedb 251
-  # 0xFC
-  @rdb_opcode_expiretime_ms 252
-  # 0xFD
-  @rdb_opcode_expiretime 253
-  # 0xFE
-  @rdb_opcode_selectdb 254
-  # 0xFF
-  @rdb_opcode_eof 255
-
-  # Basic Types
-  @rdb_type_string 0
-  @rdb_type_list 1
-  @rdb_type_set 2
-  # @rdb_type_zset 3
-  # @rdb_type_hash 4
-  # @rdb_type_zset_2 5 # zset version 2 with doubles stored in binary
-  # @rdb_type_module 6
-
-  # Encoded Types
-  # @rdb_type_hash_zipmap 9
-  @rdb_type_list_ziplist 10
-  # @rdb_type_set_intset 11
-  # @rdb_type_zset_ziplist 12
-  # @rdb_type_hash_ziplist 13
-  @rdb_type_list_quicklist 14
-  # @rdb_type_stream_listpacks 15
-
-  @rdb_file_header "REDIS"
 
   @doc false
   @spec parse(binary) :: {[rdb_entry], binary()}
@@ -254,7 +255,7 @@ defmodule RdbParser do
     end
   end
 
-  def parse(<<unsupported_type::size(8), rest::binary>> = orig, entries)
+  def parse(<<unsupported_type::size(8), _rest::binary>>, _entries)
       when unsupported_type <= 15 do
     Logger.warn("unsupported key type #{unsupported_type}")
   end
