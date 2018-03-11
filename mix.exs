@@ -4,7 +4,7 @@ defmodule RdbParser.MixProject do
   def project do
     [
       app: :rdb_parser,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.5",
       start_permanent: Mix.env() == :prod,
       deps: deps()
@@ -22,7 +22,7 @@ defmodule RdbParser.MixProject do
   defp deps do
     [
       {:lzf, "~> 0.1"},
-      {:redix, ">= 0.0.0", only: [:test]},
+      {:redix, ">= 0.0.0", only: [:test, :dev]},
       {:dialyxir, "~> 0.5", only: [:dev]},
       {:credo, "~> 0.8", only: [:dev]}
     ]
