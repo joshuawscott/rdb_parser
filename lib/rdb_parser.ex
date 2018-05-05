@@ -103,7 +103,7 @@ defmodule RdbParser do
   """
   @spec stream_entries(binary, stream_options) :: Enumerable.t()
   def stream_entries(filename, opts \\ []) do
-    chunk_size = Keyword.get(opts, :chunk_size, 65536)
+    chunk_size = Keyword.get(opts, :chunk_size, 65_536)
 
     filename
     |> File.stream!([], chunk_size)
@@ -282,8 +282,8 @@ defmodule RdbParser do
 
   def parse(<<unsupported_type::size(8), rest::binary>>, _entries)
       when unsupported_type <= 15 do
-    IO.inspect(rest)
     Logger.warn("unsupported key type #{unsupported_type}")
+    {:parse_error, rest}
   end
 
   # Fallback case - this should mean that we don't have the right length in

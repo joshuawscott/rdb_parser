@@ -6,3 +6,7 @@ elixir:
   - '1.6.3'
 before_script:
   sudo redis-server --dir $TRAVIS_BUILD_DIR --dbfilename dump.rdb &
+script:
+  - mix test
+  - mix credo --strict
+  - mix dialyzer

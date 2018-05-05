@@ -22,7 +22,7 @@ defmodule RdbParserTest.Support do
     end)
   end
 
-  def get_milliseconds() do
+  def get_milliseconds do
     System.convert_time_unit(System.os_time(), :native, :milliseconds)
   end
 

@@ -1,11 +1,14 @@
 defmodule RdbParser.RedisHash do
   @moduledoc false
 
+  alias RdbParser.RedisList
+  alias RdbParser.RedisString
+
   @spec parse_ziplist(binary) :: :incomplete | {map(), binary}
   def parse_ziplist(binary) do
     with {data_structure_length, rest} <- RdbParser.parse_length(binary),
          <<ziplist::binary-size(data_structure_length), rest::binary>> <- rest,
-         list when is_list(list) <- RdbParser.RedisList.parse_ziplist(ziplist) do
+         list when is_list(list) <- RedisList.parse_ziplist(ziplist) do
       map =
         list
         |> Enum.chunk_every(2)
@@ -36,8 +39,8 @@ defmodule RdbParser.RedisHash do
   end
 
   def parse_hash_entries(binary, parsed_entries, entries_left) do
-    with {key, rest} <- RdbParser.RedisString.parse(binary),
-         {value, rest} <- RdbParser.RedisString.parse(rest) do
+    with {key, rest} <- RedisString.parse(binary),
+         {value, rest} <- RedisString.parse(rest) do
       parse_hash_entries(rest, [{key, value} | parsed_entries], entries_left - 1)
     else
       :incomplete -> :incomplete

@@ -53,9 +53,9 @@ defmodule RdbParserTest do
   end
 
   for integer <- [
-        -65537,
-        -65536,
-        -65535,
+        -65_537,
+        -65_536,
+        -65_535,
         -257,
         -256,
         -255,
@@ -69,8 +69,8 @@ defmodule RdbParserTest do
         13,
         255,
         256,
-        65535,
-        65536
+        65_535,
+        65_536
       ] do
     test "parsing integer #{integer}", %{redis: redis} do
       int = unquote(integer)
