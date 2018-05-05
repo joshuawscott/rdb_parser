@@ -1,8 +1,8 @@
 defmodule RdbParser.RedisString do
   @moduledoc false
   # Parses redis strings from the rdb format
-  # RedisString.parse looks at the first byte to determine how the length is encoded, then takes the next
-  # length bytes as the string value and returns {string, rest}.
+  # RedisString.parse looks at the first byte to determine how the length is encoded, then takes the
+  # next length bytes as the string value and returns {string, rest}.
 
   @enc_len_32 128
   @enc_len_64 129
@@ -11,7 +11,7 @@ defmodule RdbParser.RedisString do
   @enc_signed_32 194
   @enc_lzf 195
   # short string (6-bit length)
-  @spec parse(binary) :: binary | integer
+  @spec parse(binary) :: :incomplete | {integer, binary}
   def parse(<<0::size(2), len::size(6), str::binary-size(len), rest::binary>>) do
     {str, rest}
   end

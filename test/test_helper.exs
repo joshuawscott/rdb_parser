@@ -22,7 +22,7 @@ defmodule RdbParserTest.Support do
     end)
   end
 
-  def get_milliseconds() do
+  def get_milliseconds do
     System.convert_time_unit(System.os_time(), :native, :milliseconds)
   end
 
@@ -43,6 +43,15 @@ defmodule RdbParserTest.Support do
     list = MapSet.to_list(value)
     args = list ++ opts
     Redix.command(redis, ["SADD", key | args])
+  end
+
+  def add_key(redis, key, %{} = value, opts) do
+    hash =
+      value
+      |> Enum.flat_map(fn {k, v} -> [k, v] end)
+
+    args = hash ++ opts
+    Redix.command(redis, ["HSET", key | args])
   end
 
   def add_key(redis, key, value, opts) do

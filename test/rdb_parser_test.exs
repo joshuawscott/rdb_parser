@@ -52,7 +52,26 @@ defmodule RdbParserTest do
     assert {value, []} == entries[key]
   end
 
-  for integer <- [-65537, -65536, -65535, -257, -256, -255, -14, -13, -12, -1, 0, 1, 12, 13, 255, 256, 65535, 65536] do
+  for integer <- [
+        -65_537,
+        -65_536,
+        -65_535,
+        -257,
+        -256,
+        -255,
+        -14,
+        -13,
+        -12,
+        -1,
+        0,
+        1,
+        12,
+        13,
+        255,
+        256,
+        65_535,
+        65_536
+      ] do
     test "parsing integer #{integer}", %{redis: redis} do
       int = unquote(integer)
       Redix.command(redis, ["SET", "mykey", int])
@@ -63,7 +82,6 @@ defmodule RdbParserTest do
       assert int == got_int
     end
   end
-
 
   test "parsing a list", %{redis: redis} do
     original_list = ["AAAAAAAAAAA", "AAAAAAAAAA", "A"]

@@ -16,6 +16,7 @@ defmodule RdbParser do
   """
 
   alias RdbParser.RedisList
+  alias RdbParser.RedisHash
   alias RdbParser.RedisSet
   alias RdbParser.RedisString
   require Logger
@@ -57,7 +58,7 @@ defmodule RdbParser do
   @rdb_type_list 1
   @rdb_type_set 2
   # @rdb_type_zset 3
-  # @rdb_type_hash 4
+  @rdb_type_hash 4
   # @rdb_type_zset_2 5 # zset version 2 with doubles stored in binary
   # @rdb_type_module 6
 
@@ -66,12 +67,11 @@ defmodule RdbParser do
   # @rdb_type_list_ziplist 10
   # @rdb_type_set_intset 11
   # @rdb_type_zset_ziplist 12
-  # @rdb_type_hash_ziplist 13
+  @rdb_type_hash_ziplist 13
   @rdb_type_list_quicklist 14
   # @rdb_type_stream_listpacks 15
 
   @rdb_file_header "REDIS"
-
 
   @doc """
   Pass a filename and `opts`.
@@ -103,7 +103,7 @@ defmodule RdbParser do
   """
   @spec stream_entries(binary, stream_options) :: Enumerable.t()
   def stream_entries(filename, opts \\ []) do
-    chunk_size = Keyword.get(opts, :chunk_size, 65536)
+    chunk_size = Keyword.get(opts, :chunk_size, 65_536)
 
     filename
     |> File.stream!([], chunk_size)
@@ -255,9 +255,35 @@ defmodule RdbParser do
     end
   end
 
-  def parse(<<unsupported_type::size(8), _rest::binary>>, _entries)
+  # HASH type with ziplist encoding
+  def parse(<<@rdb_type_hash_ziplist, rest::binary>> = orig, entries) do
+    with {key, rest} <- RedisString.parse(rest),
+         {value, rest} <- RedisHash.parse_ziplist(rest) do
+      entry = {:entry, {key, value, []}}
+      parse(rest, [entry | entries])
+    else
+      :incomplete ->
+        Logger.debug("incomplete in hash")
+        {:lists.reverse(entries), orig}
+    end
+  end
+
+  def parse(<<@rdb_type_hash, rest::binary>> = orig, entries) do
+    with {key, rest} <- RedisString.parse(rest),
+         {value, rest} <- RedisHash.parse_hash(rest) do
+      entry = {:entry, {key, value, []}}
+      parse(rest, [entry | entries])
+    else
+      :incomplete ->
+        Logger.debug("incomplete in hash")
+        {:lists.reverse(entries), orig}
+    end
+  end
+
+  def parse(<<unsupported_type::size(8), rest::binary>>, _entries)
       when unsupported_type <= 15 do
     Logger.warn("unsupported key type #{unsupported_type}")
+    {:parse_error, rest}
   end
 
   # Fallback case - this should mean that we don't have the right length in

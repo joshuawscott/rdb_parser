@@ -21,13 +21,16 @@ defmodule RdbParser.RedisList do
     with {num_ziplists, rest} <- RdbParser.parse_length(data),
          {backward_encoded_ziplists, unused} <- extract_encoded_ziplists(rest, num_ziplists),
          encoded_ziplists <- Enum.reverse(backward_encoded_ziplists),
-         list when is_list(list) <- encoded_ziplists |> Enum.map(&parse_ziplist/1) |> List.flatten()
-    do
+         list when is_list(list) <-
+           encoded_ziplists |> Enum.map(&parse_ziplist/1) |> List.flatten() do
       {list, unused}
     else
       :incomplete -> :incomplete
     end
   end
+
+  # Need to move this to a separate module as it's a generic method for parsing multiple types.
+  def parse_ziplist(""), do: :incomplete
 
   def parse_ziplist(
         <<_total_size::little-integer-size(32), _offset_to_tail::little-integer-size(32),
