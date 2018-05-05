@@ -7,6 +7,11 @@ defmodule RdbParser.MixProject do
       version: "0.3.0",
       elixir: "~> 1.5",
       start_permanent: Mix.env() == :prod,
+      description: """
+      Parses an Redis dump backup file (.rdb file) and extracts entries into a Stream for out of
+      band processing of data stored in redis.
+      """,
+      package: package(),
       deps: deps()
     ]
   end
@@ -28,4 +33,14 @@ defmodule RdbParser.MixProject do
       {:ex_doc, ">= 0.0.0", only: [:dev]}
     ]
   end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      source_url: "https://github.com/joshuawscott/rdb_parser",
+      maintainers: ["Joshua Scott"],
+      links: %{"GitHub" => "https://github.com/joshuawscott/rdb_parser"}
+    ]
+  end
+
 end
