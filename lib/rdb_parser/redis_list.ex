@@ -21,8 +21,8 @@ defmodule RdbParser.RedisList do
     with {num_ziplists, rest} <- RdbParser.parse_length(data),
          {backward_encoded_ziplists, unused} <- extract_encoded_ziplists(rest, num_ziplists),
          encoded_ziplists <- Enum.reverse(backward_encoded_ziplists),
-         list when is_list(list) <- encoded_ziplists |> Enum.map(&parse_ziplist/1) |> List.flatten()
-    do
+         list when is_list(list) <-
+           encoded_ziplists |> Enum.map(&parse_ziplist/1) |> List.flatten() do
       {list, unused}
     else
       :incomplete -> :incomplete

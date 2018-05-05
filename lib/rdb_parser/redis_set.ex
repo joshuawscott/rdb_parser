@@ -5,7 +5,7 @@ defmodule RdbParser.RedisSet do
 
   alias RdbParser.RedisString
 
-  @spec parse(binary) :: MapSet.t
+  @spec parse(binary) :: MapSet.t()
   def parse(binary) do
     {num_entries, rest} = RdbParser.parse_length(binary)
 

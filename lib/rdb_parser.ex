@@ -72,7 +72,6 @@ defmodule RdbParser do
 
   @rdb_file_header "REDIS"
 
-
   @doc """
   Pass a filename and `opts`.
   The filename is read in chunks and parsed to avoid reading the entire backup
