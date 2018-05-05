@@ -45,6 +45,15 @@ defmodule RdbParserTest.Support do
     Redix.command(redis, ["SADD", key | args])
   end
 
+  def add_key(redis, key, %{} = value, opts) do
+    hash =
+      value
+      |> Enum.flat_map(fn {k, v} -> [k, v] end)
+
+    args = hash ++ opts
+    Redix.command(redis, ["HSET", key | args])
+  end
+
   def add_key(redis, key, value, opts) do
     command = ["SET", key] ++ [value | opts]
 

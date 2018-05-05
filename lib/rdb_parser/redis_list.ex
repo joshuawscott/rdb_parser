@@ -29,6 +29,9 @@ defmodule RdbParser.RedisList do
     end
   end
 
+  # Need to move this to a separate module as it's a generic method for parsing multiple types.
+  def parse_ziplist(""), do: :incomplete
+
   def parse_ziplist(
         <<_total_size::little-integer-size(32), _offset_to_tail::little-integer-size(32),
           num_entries::little-integer-size(16), payload::binary>>
