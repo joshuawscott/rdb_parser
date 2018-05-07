@@ -65,7 +65,7 @@ defmodule RdbParser do
   # Encoded Types
   # @rdb_type_hash_zipmap 9
   # @rdb_type_list_ziplist 10
-  # @rdb_type_set_intset 11
+  @rdb_type_set_intset 11
   # @rdb_type_zset_ziplist 12
   @rdb_type_hash_ziplist 13
   @rdb_type_list_quicklist 14
@@ -246,6 +246,19 @@ defmodule RdbParser do
   def parse(<<@rdb_type_set, rest::binary>> = orig, entries) do
     with {key, rest} <- RedisString.parse(rest),
          {value, rest} <- RedisSet.parse(rest) do
+      entry = {:entry, {key, value, []}}
+      parse(rest, [entry | entries])
+    else
+      :incomplete ->
+        Logger.debug("incomplete in set")
+        {:lists.reverse(entries), orig}
+    end
+  end
+
+  # This is a SET type key/value pair
+  def parse(<<@rdb_type_set_intset, rest::binary>> = orig, entries) do
+    with {key, rest} <- RedisString.parse(rest),
+         {value, rest} <- RedisSet.parse_intset(rest) do
       entry = {:entry, {key, value, []}}
       parse(rest, [entry | entries])
     else

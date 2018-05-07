@@ -94,41 +94,6 @@ defmodule RdbParserTest do
     assert original_list == parsed_list
   end
 
-  test "parsing a set", %{redis: redis} do
-    Redix.command(redis, ["SADD", "myset", "one"])
-    Redix.command(redis, ["SADD", "myset", "two"])
-    Redix.command(redis, ["SADD", "myset", "three"])
-    save(redis)
-
-    entries = parse_rdb()
-
-    %{"myset" => {set, []}} = entries
-    assert MapSet.member?(set, "one")
-    assert MapSet.member?(set, "two")
-    assert MapSet.member?(set, "three")
-  end
-
-  test "parsing a set with an expiration", %{redis: redis} do
-    # earlier than expiration
-    beginning = get_milliseconds() + 60_000
-    Redix.command(redis, ["SADD", "myset", "one"])
-    Redix.command(redis, ["SADD", "myset", "two"])
-    Redix.command(redis, ["SADD", "myset", "three"])
-    Redix.command(redis, ["EXPIRE", "myset", 60])
-    save(redis)
-
-    entries = parse_rdb()
-
-    %{"myset" => {set, [expire_ms: expiration]}} = entries
-    assert MapSet.member?(set, "one")
-    assert MapSet.member?(set, "two")
-    assert MapSet.member?(set, "three")
-    # later than expiration
-    ending = get_milliseconds() + 60_000
-    assert beginning <= expiration
-    assert ending >= expiration
-  end
-
   test "parsing a mix of keys", %{redis: redis} do
     # earlier than expiration
     beginning = get_milliseconds() + 60_000
