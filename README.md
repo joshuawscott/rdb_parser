@@ -6,7 +6,7 @@ Parses a redis backup (.rdb) file.
 
 Parses strings, sets, and lists, with or without expirations.
 
-Other formats will be supported eventaully (or make a PR)
+Other formats will be supported eventaully (Pull requests welcome :))
 
 ## Installation
 

@@ -1,3 +1,6 @@
+## 0.3.1
+Support intset (special encoding for Sets with only integers)
+
 ## 0.3.0
 Support Hash extraction
 
